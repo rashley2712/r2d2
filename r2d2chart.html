@@ -1,0 +1,302 @@
+<html>
+    <head>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+        <link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
+        <!-- Latest compiled and minified CSS -->
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+        
+        <link href="https://gitcdn.github.io/bootstrap-toggle/2.2.2/css/bootstrap-toggle.min.css" rel="stylesheet">
+        <script src="https://gitcdn.github.io/bootstrap-toggle/2.2.2/js/bootstrap-toggle.min.js"></script>
+        <link rel="stylesheet" type="text/css" href="styles.css"/> 
+        <title>R2D2 charts</title>
+        <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+        <script type="text/javascript" src="charts.js"></script>
+        <script language="Javascript">
+            google.charts.load('current', {'packages':['corechart', 'timeline']});
+            google.charts.setOnLoadCallback(onLoad);
+
+            var seeingData = {};
+            var startTime = null;
+            var endTime = null;
+            var refreshID = null;
+            var liveData = 0;
+            var dataRefreshSize = "7200";   // Data range for updates (in seconds)
+            var latestReading = null;
+            var baseURL = 'http://www.ing.iac.es/~rashley/robodimm/get_data.php';
+            // baseURL = "http://localhost/get_data.txt";
+            var allCharts = [];
+
+            function onLoad() {
+                console.log("The page has loaded....");
+                if (localStorage.getItem("dataRefreshSize") != null) {
+                    dataRefreshSize = localStorage.getItem("dataRefreshSize");
+                    console.log("Restored dataRefreshSize to: "+ dataRefreshSize);
+                }
+                if (localStorage.getItem("liveData") != null) {
+                    liveData = localStorage.getItem("liveData");
+                    console.log("Restored liveData to: "+ liveData);
+                    }
+                if (liveData==1) {
+                   $('#refresh').bootstrapToggle('on');
+                    document.getElementById("liveDisplay").style.visibility = "visible";
+                } else getNewData(dataRefreshSize);
+                
+                tickerID = setInterval(clockTicker, 1000);
+            } 
+
+            function decimalPlacesFloat(value, places) {
+            	multiplier = Math.pow(10, places);
+	            return Math.round(value*multiplier) / multiplier;
+            }
+
+            function parseDate(rawDate) {
+                console.log("raw date:", rawDate);
+                var year = parseInt(rawDate.substring(0, 4));
+                var month = parseInt(rawDate.substring(5, 7));
+                var day = parseInt(rawDate.substring(8, 10));
+                var hour = parseInt(rawDate.substring(11, 13));
+                var minute = parseInt(rawDate.substring(14, 16));
+                var second = parseInt(rawDate.substring(17, 19));
+                var offset = parseInt(rawDate.split('+')[1]);
+                // console.log("year:", year, "month", month, "day:", day, "hour:", hour, "minute:", minute, "seconds:", second, "offset:", offset);
+                var datetime = new Date(year, month-1, day, hour, minute, second);
+                //console.log(datetime);
+                return datetime;
+            }
+
+            function processData(err, textData) {
+                var textData = textData.split('\n');
+                seeingData['dates'] = [];
+                seeingData['seeing_trans'] = [];
+                seeingData['seeing_long'] = [];
+                seeingData['star'] = [];
+                seeingData['airmass'] = [];
+                seeingData['mean_x'] = [];
+                seeingData['mean_y'] = [];
+                console.log("get_data.php returned " + textData.length + " rows.");
+                if (err!=null) {
+                    console.log("Error...");
+                    console.log(err);
+                    return;
+                }
+                for (var i in textData) {
+                    if (textData[i][0] == '#') continue;  // Skip lines containing comments
+                    fields = textData[i].split(",");     
+                    if (fields.length<2) continue;        // Skip the blank lines
+		            seeingData['dates'].push(parseDate(fields[0]));
+                    seeingData['seeing_trans'].push(parseFloat(fields[1]));
+                    seeingData['seeing_long'].push(parseFloat(fields[2]));
+                    seeingData['star'].push(fields[3]);
+                    seeingData['airmass'].push(parseFloat(fields[4]));
+                    seeingData['mean_x'].push(parseFloat(fields[5]));
+                    seeingData['mean_y'].push(parseFloat(fields[6]));
+                }
+
+                console.log("Data loaded... " + seeingData['dates'].length + " data points.");
+                document.getElementById('npoints').innerText = seeingData['dates'].length;
+                if (seeingData['dates'].length) {
+                    allCharts=[];
+                    allCharts.push(drawSeeingChart());
+                    allCharts.push(drawStarChart());
+                    allCharts.push(drawAirmassSeeingChart());
+                    allCharts.push(drawStatsChart());
+                    allCharts.push(drawPositionChart());
+                } else {
+                    // No data returned... clear the charts
+                    for (var i in allCharts) allCharts[i].clearChart();
+                }
+
+                latestReading = {};
+                var keys = Object.keys(seeingData);
+                var lastIndex = seeingData['dates'].length - 1;
+                for (var k in keys) {
+                    console.log(keys[k]);
+                    latestReading[keys[k]] = seeingData[keys[k]][lastIndex];
+                }
+                if (liveData) updateLiveDisplay();
+                // Change the status of the downloading icon back to gray
+                $('#downloading').css('color', 'gray');
+
+            }
+
+            function getData(url, callback) {
+                var xhr = new XMLHttpRequest();
+                    xhr.open('GET', url, true);
+                    xhr.responseType = 'text';
+                    xhr.onload = function() {
+                        var status = xhr.status;
+                        if (status === 200) {   
+                            callback(null, xhr.response);
+                        } else {
+                            callback(status, xhr.response);
+                        }
+                    };   
+                xhr.send();
+            };
+
+            function getNewData(seconds) {
+                console.log("in get new data....");
+                console.log("getNewData(" + seconds + ")");
+                var oldRefresh = dataRefreshSize;
+                dataRefreshSize = seconds;
+                if (dataRefreshSize > 86400 && liveData ){
+                    toggleRefresh();
+                    $('#refresh').bootstrapToggle('off');
+                }
+                document.getElementById("r" + oldRefresh).setAttribute("class", "timebutton");
+                document.getElementById("r" + seconds).setAttribute("class", "timebutton btn-primary");
+                localStorage.setItem("dataRefreshSize", seconds);
+                var now = new Date();
+                console.log(now);
+                var startDate = new Date(now - seconds * 1000);
+                console.log(startDate);
+                startTime = startDate;
+                endTime = now;
+                fillDateFields();
+                var params = "time_start=" + encodeURIComponent(formatUTCTime(startTime));
+                params+="&time_end=" + encodeURIComponent(formatUTCTime(endTime));
+                console.log("Params: " + params);
+                // params = "time_start=2018-12-11+20%3A00%3A00";
+                //document.getElementById("downloading").setAttribute("style", "colour: green");
+                $('#downloading').css('color', 'green');
+                getData(baseURL + '?' + params, processData);
+            }    
+
+            function clockTicker() {
+		    	var now = new Date();
+                // console.log("tick");
+			    document.getElementById('UTCfield').value = formatUTCTime(now);
+            }
+
+            function fillDateFields() {
+                document.getElementById('starttime').value = formatUTCTime(startTime);
+                document.getElementById('endtime').value = formatUTCTime(endTime);
+            }
+
+            function zeroPad(input) {
+                if (input < 10) return "0" + input.toString();
+                return input.toString();
+            } 
+
+    		function formatUTCTime(date) {
+                var dateStr = date.getUTCFullYear() + "-" + zeroPad(date.getUTCMonth()+1) + "-" + zeroPad(date.getUTCDate());
+                var time = zeroPad(date.getUTCHours()) + ":" + zeroPad(date.getUTCMinutes()) + ":" + zeroPad(date.getUTCSeconds());
+                return dateStr + " " + time;
+			}
+
+            function changeDateRange() {
+                function isValidDate(d) {
+                    return d instanceof Date && !isNaN(d);
+                    }
+                var newStartTime = document.getElementById('starttime').value;
+                var newEndTime = document.getElementById('endtime').value;
+                var newStart = new Date(newStartTime);
+                var newEnd = new Date(newEndTime);
+                if (!isValidDate(newStart)) { alert("Invalid date!"); return; }
+                if (!isValidDate(newEnd)) { alert("Invalid date!"); return; }
+                if (newEnd<newStart) { alert("end before beginning!"); return }
+
+                startTime = newStart;
+                endTime = newEnd;
+                console.log("Fetching data from " + formatUTCTime(startTime) + " to " + formatUTCTime(endTime));
+
+                var params = "time_start=" + encodeURIComponent(formatUTCTime(startTime));
+                params+="&time_end=" + encodeURIComponent(formatUTCTime(endTime));
+                console.log("Params: " + params);
+                $('#downloading').css('color', 'green');
+                getData(baseURL + '?' + params, processData);
+            }
+
+            function refreshData() {
+                getNewData(dataRefreshSize);
+            }
+
+            function updateLiveDisplay() {
+                console.log(latestReading);
+                seeing = (latestReading['seeing_long'] + latestReading['seeing_trans']) /2;
+                $('#latestseeing').text(decimalPlacesFloat(seeing, 2)+'"');
+                if (seeing<=1.5) document.getElementById("latestseeing").className = "btn-lg btn-success";
+                else if ((seeing>1.5) && (seeing<2)) document.getElementById("latestseeing").className = "btn-lg btn-warning";
+                else document.getElementById("latestseeing").className = "btn-lg btn-danger";
+                $('#lateststar').text(latestReading['star']);
+                var timeSince = parseFloat((new Date() - latestReading['dates']) / 1000);
+                console.log("time since " + timeSince);
+                var timeSinceStr = "";
+                if (timeSince<60) timeSinceStr = decimalPlacesFloat(timeSince, 0) + "s";
+                if ((timeSince>=60) && (timeSince<3600)) timeSinceStr = decimalPlacesFloat(timeSince/60, 0) + "m";
+                if ((timeSince>=3600) && (timeSince<86400)) {
+                    var hours = Math.floor(timeSince/3600);
+                    var minutes = Math.floor(timeSince/60 - hours*60);
+                    timeSinceStr = zeroPad(hours) + ":" + zeroPad(minutes);
+                }
+                if (timeSince>86400) timeSinceStr = ">24hr";
+                $('#timesince').text(timeSinceStr);
+                
+            }
+  
+            function toggleRefresh(value) {
+                if (value) {
+                    console.log("Toggle refresh: ON");
+                    refreshID = setInterval(refreshData, 30 * 1000);
+                    liveData = 1;
+                    localStorage.setItem("liveData", 1);
+                    document.getElementById("liveDisplay").style.visibility = "visible";
+                    getNewData(dataRefreshSize);
+                } else {
+                    console.log("Toggle refresh: OFF");
+                    clearInterval(refreshID);
+                    liveData = 0;
+                    localStorage.setItem("liveData", 0);
+                    document.getElementById("liveDisplay").style.visibility = "hidden";
+                }
+                
+            }
+	
+            
+           
+</script>
+</head>
+
+<body>
+    
+    <img src="r2d2_logo.png">
+    <div>
+        <span class="glyphicon glyphicon-time" style="color:black"></span>
+        <input type="text" id="UTCfield" size="21"></input>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span class="glyphicon glyphicon-time" style="color:green"></span>
+	    <input type="text" size="21" id="starttime" value="" onchange="changeDateRange()"></input>
+        <input type="text" size="21" id="endtime" value="" onchange="changeDateRange()"></input>
+        <span class="glyphicon glyphicon-time" style="color:red"></span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span id="downloading" class="glyphicon glyphicon-download" style="color:gray"></span>
+        <input id="refresh" type="checkbox" data-toggle="toggle" data-onstyle="success" data-size="small" data-on="live" data-off="static" onchange="toggleRefresh(this.checked)">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span id="npoints" style="font-weight: bold;">0</span> points in dataset.    
+    </div>
+    
+    <div id="liveDisplay" style="position: absolute; z-index: 1; left: 200px; top: 170px; opacity: 1.0; visibility: hidden;">
+        <button class="btn-lg" id="latestseeing" aria-pressed="true" >--</button>
+        <button class="btn" id="lateststar" >--</button>
+        <button class="btn" id="timesince" >--</button>
+    </div>  
+    
+    <div>
+        <button class="timebutton" id="r7200"  onclick="getNewData('7200')">2hr</button>
+        <button class="timebutton" id="r14400"   onclick="getNewData('14400')">4hr</button>
+        <button class="timebutton" id="r28800"   onclick="getNewData('28800')">8hr</button>
+        <button class="timebutton" id="r43200"   onclick="getNewData('43200')">12hr</button>
+        <button class="timebutton" id="r86400"   onclick="getNewData('86400')">24hr</button>
+        <button class="timebutton" id="r604800"  onclick="getNewData('604800')">1 week</button>
+        <button class="timebutton" id="r2678400" onclick="getNewData('2678400')">1 month</button>
+        <button class="timebutton" id="r16070400" onclick="getNewData('16070400')">6 months</button>
+        <button class="timebutton" id="r31536000" onclick="getNewData('31536000')">1 year</button>
+    </div> 
+
+    
+    <div id="seeing" style="width: 750px; height: 500px; position: absolute; top: 180px; left: 20px;"></div>
+    <div id="stats" style="width: 500px; height: 500px;  position: absolute; top: 180px; left: 750px;"></div>
+    <canvas width=500 height=500 id="stats_overlay" style="width: 500; height:500; position: absolute; top: 180px; left: 750px; z-index:auto"></canvas>
+    <div id="stars" style="width: 700px; height: 400px; position: absolute; top: 1180px; left: 20px;"></div>
+    <div id="airmass" style="width: 500px; height: 500px;  position: absolute; top: 670px; left: 750px;"></div>
+    <div id="position" style="width: 750px; height: 500px;  position: absolute; top: 670px; left: 20px;"></div>
+    
+</body>
+</html>
