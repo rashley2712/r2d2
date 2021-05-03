@@ -22,6 +22,7 @@
             var liveData = 0;
             var dataRefreshSize = "7200";   // Data range for updates (in seconds)
             var latestReading = null;
+			var summerTime = true;
             var baseURL = 'http://www.ing.iac.es/~rashley/robodimm/get_data.php';
             // baseURL = "http://localhost/get_data.txt";
             var allCharts = [];
@@ -58,8 +59,8 @@
                 var minute = parseInt(rawDate.substring(14, 16));
                 var second = parseInt(rawDate.substring(17, 19));
                 var offset = parseInt(rawDate.split('+')[1]);
-                // console.log("year:", year, "month", month, "day:", day, "hour:", hour, "minute:", minute, "seconds:", second, "offset:", offset);
-                var datetime = new Date(year, month-1, day, hour, minute, second);
+                console.log("year:", year, "month", month, "day:", day, "hour:", hour, "minute:", minute, "seconds:", second, "offset:", offset);
+                var datetime = new Date(Date.UTC(year, month-1, day, hour, minute, second));
                 //console.log(datetime);
                 return datetime;
             }
@@ -120,18 +121,20 @@
             }
 
             function getData(url, callback) {
-                var xhr = new XMLHttpRequest();
-                    xhr.open('GET', url, true);
-                    xhr.responseType = 'text';
-                    xhr.onload = function() {
-                        var status = xhr.status;
-                        if (status === 200) {   
-                            callback(null, xhr.response);
-                        } else {
-                            callback(status, xhr.response);
-                        }
-                    };   
-                xhr.send();
+				console.log(url);
+                document.getElementById("rawDataLink").href=url;
+				xhr = new XMLHttpRequest();
+                xhr.open('GET', url, true);
+				xhr.responseType = 'text';
+				xhr.onload = function() {
+					var status = xhr.status;
+					if (status === 200) {   
+						callback(null, xhr.response);
+					} else {
+						callback(status, xhr.response);
+					}
+				};   
+				xhr.send();
             };
 
             function getNewData(seconds) {
@@ -147,19 +150,27 @@
                 document.getElementById("r" + seconds).setAttribute("class", "timebutton btn-primary");
                 localStorage.setItem("dataRefreshSize", seconds);
                 var now = new Date();
-                console.log(now);
+                console.log("Now is:", now);
                 var startDate = new Date(now - seconds * 1000);
                 console.log(startDate);
                 startTime = startDate;
                 endTime = now;
                 fillDateFields();
-                var params = "time_start=" + encodeURIComponent(formatUTCTime(startTime));
-                params+="&time_end=" + encodeURIComponent(formatUTCTime(endTime));
-                console.log("Params: " + params);
+				var params = "";
+				if (summerTime) {
+                	params = "time_start=" + encodeURIComponent(formatTime(startTime));
+                	params+="&time_end=" + encodeURIComponent(formatTime(endTime));
+				} else {
+                	params = "time_start=" + encodeURIComponent(formatUTCTime(startTime));
+                	params+="&time_end=" + encodeURIComponent(formatUTCTime(endTime));
+				}
+				console.log("Params: " + params);
                 // params = "time_start=2018-12-11+20%3A00%3A00";
                 //document.getElementById("downloading").setAttribute("style", "colour: green");
                 $('#downloading').css('color', 'green');
-                getData(baseURL + '?' + params, processData);
+                var rawDataURL = baseURL + "?" + params;
+				
+				getData(baseURL + '?' + params, processData);
             }    
 
             function clockTicker() {
@@ -181,6 +192,12 @@
     		function formatUTCTime(date) {
                 var dateStr = date.getUTCFullYear() + "-" + zeroPad(date.getUTCMonth()+1) + "-" + zeroPad(date.getUTCDate());
                 var time = zeroPad(date.getUTCHours()) + ":" + zeroPad(date.getUTCMinutes()) + ":" + zeroPad(date.getUTCSeconds());
+                return dateStr + " " + time;
+			}
+
+			function formatTime(date) {
+                var dateStr = date.getFullYear() + "-" + zeroPad(date.getMonth()+1) + "-" + zeroPad(date.getDate());
+                var time = zeroPad(date.getHours()) + ":" + zeroPad(date.getMinutes()) + ":" + zeroPad(date.getSeconds());
                 return dateStr + " " + time;
 			}
 
@@ -219,7 +236,15 @@
                 else if ((seeing>1.5) && (seeing<2)) document.getElementById("latestseeing").className = "btn-lg btn-warning";
                 else document.getElementById("latestseeing").className = "btn-lg btn-danger";
                 $('#lateststar').text(latestReading['star']);
-                var timeSince = parseFloat((new Date() - latestReading['dates']) / 1000);
+
+				latestDateString = latestReading['dates'].toString();
+				console.log("string:", latestDateString);
+				latestDate = new Date();
+				console.log("latestDate:", latestDate);
+				latestDate.setUTCDate(latestDateString)
+				console.log("latest data", latestDateString, latestDate);
+				
+				var timeSince = parseFloat((new Date() - latestReading['dates']) / 1000);
                 console.log("time since " + timeSince);
                 var timeSinceStr = "";
                 if (timeSince<60) timeSinceStr = decimalPlacesFloat(timeSince, 0) + "s";
@@ -259,7 +284,7 @@
 
 <body>
     
-    <img src="r2d2_logo.png">
+    <img src="r2d2_logo.png" style="text-align: left;">
     <div>
         <span class="glyphicon glyphicon-time" style="color:black"></span>
         <input type="text" id="UTCfield" size="21"></input>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -297,6 +322,8 @@
     <div id="stars" style="width: 700px; height: 400px; position: absolute; top: 1180px; left: 20px;"></div>
     <div id="airmass" style="width: 500px; height: 500px;  position: absolute; top: 670px; left: 750px;"></div>
     <div id="position" style="width: 750px; height: 500px;  position: absolute; top: 670px; left: 20px;"></div>
+
+	<div id="footer" style="position: absolute; top: 1260px; left: 10px;"><a id="rawDataLink">raw data</a><br>ver 0.9</div>
     
 </body>
 </html>
