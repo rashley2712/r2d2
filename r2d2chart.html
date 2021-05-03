@@ -245,6 +245,7 @@
 				console.log("latest data", latestDateString, latestDate);
 				
 				var timeSince = parseFloat((new Date() - latestReading['dates']) / 1000);
+				if (summerTime) timeSince+= 3600
                 console.log("time since " + timeSince);
                 var timeSinceStr = "";
                 if (timeSince<60) timeSinceStr = decimalPlacesFloat(timeSince, 0) + "s";
