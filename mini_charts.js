@@ -1,70 +1,3 @@
-            function drawStarChart() {
-                var dataTable = new google.visualization.DataTable();
-                dataTable.addColumn({ type: 'string', id: 'Star' });
-                dataTable.addColumn({ type: 'date', id: 'Start' });
-                dataTable.addColumn({ type: 'date', id: 'End' });
-    
-                currentStar = "none";
-                for (var i in seeingData['dates']) {
-                    if (seeingData['star'][i] != currentStar) {
-                        if (currentStar!="none") dataTable.addRow( [ currentStar, beginTime, finishTime ]);
-                        currentStar = seeingData['star'][i];
-                        beginTime = seeingData['dates'][i];
-                    }
-                    finishTime = seeingData['dates'][i];
-                }
-                dataTable.addRow( [ currentStar, beginTime, finishTime ]);
-                var chart = new google.visualization.Timeline(document.getElementById('stars'));
-                var options = {
-                    backgroundColor: "#f5f4f0", 
-                    hAxis: {
-                        maxValue: endTime, 
-                        minValue: startTime
-                        },   
-                };
-                chart.draw(dataTable, options);
-                return chart;
-
-            }
-
-            function drawAirmassSeeingChart() {
-                var data =  new google.visualization.DataTable();
-                data.addColumn('number', 'airmass');
-                data.addColumn('number', 'seeing');
-                for (var i in seeingData['dates']) {
-                    meanSeeing = (seeingData['seeing_trans'][i] + seeingData['seeing_long'][i]) / 2;
-                    airmass = parseFloat(seeingData['airmass'][i]);
-                    data.addRow([airmass, meanSeeing]);
-                }
-                var chart = new google.visualization.ScatterChart(document.getElementById('airmass'));
-                var options = {
-                    title: 'Airmass vs Seeing', 
-                    hAxis: {title: 'airmass',
-                            titleTextStyle: { italic: false }
-                            },
-                    vAxis: {title: 'seeing (arcsec)',
-                            titleTextStyle: { italic: false }
-                            },
-                    backgroundColor: "#f5f4f0", 
-                    series: {
-                        0: { pointShape: 'square',
-                        visibleInLegend: false },
-                    },
-                    dataOpacity: 0.4,
-                    trendlines: {
-                        0: {
-                        type: 'linear',
-                        color: 'blue',
-                        lineWidth: 1,
-                        opacity: 0.3,
-                        visibleInLegend: false
-                        }
-                    }
-                    
-                }
-                chart.draw(data, options);
-                return chart;
-            }
 
             function drawSeeingChart() {
                 var data =  new google.visualization.DataTable();
@@ -99,7 +32,6 @@
                         },
                     chartArea: { 
                         backgroundColor: "#f5f4f0", 
-                        width: 600,
                         }, 
                     backgroundColor: "#f5f4f0", 
                     series: {
@@ -120,65 +52,9 @@
                 return chart;
 		}
 			
-
-		function drawPositionChart() {
-                var data =  new google.visualization.DataTable();
-                data.addColumn('date', 'Date');
-                data.addColumn('number', 'mean_x');
-                data.addColumn('number', 'mean_y - 95');
-                for (var i in seeingData['dates']) {
-		    var seeingDate = new Date(Date.parse(seeingData['dates'][i]));
-		    data.addRow( [
-						seeingDate, 
-						parseFloat(seeingData['mean_x'][i]),
-						parseFloat(seeingData['mean_y'][i] - 95)
-					]);
-				}
-				
-                var options = {
-                    title: 'Delta centroid position',
-                    legend: { position: 'in' }, 
-                    dataOpacity: 1.0,
-                    vAxis: {
-                        titleTextStyle: { italic: false },
-						title: 'delta (pixels)',
-						},
-                    hAxis: {
-                        title: 'Time',
-                        maxValue: endTime, 
-                        minValue: startTime,
-                        titleTextStyle: { italic: false },
-						format: 'HH:mm',
-                        },
-                    chartArea: { 
-                        backgroundColor: "#f5f4f0", 
-                        width: 600,
-                        }, 
-                    backgroundColor: "#f5f4f0", 
-                    series: {
-						0: { 
-							pointShape: 'diamond',
-						},
-						1: { 
-							pointShape: 'diamond',
-						},
-                    },
-                    explorer: { 
-                        actions: ['dragToZoom', 'rightClickToReset'],
-                        maxZoomIn: 0.01 
-                        },
-                };
-                if ((endTime - startTime) > 86400*1000) options.hAxis.format = "yyyy-MM-dd";
-
-                var chart = new google.visualization.ScatterChart(document.getElementById('position'));
-                
-                chart.draw(data, options);
-                return chart;
-            }
-
-
             function drawStatsChart() {
-                seeing = [];
+                console.log("Drawing the stats histogram.");
+				var seeing = [];
                 for (var i in seeingData['dates']) seeing.push((seeingData['seeing_trans'][i] + seeingData['seeing_long'][i])/2 );
                 
                 var n = seeing.length;
@@ -199,7 +75,7 @@
                 data.addColumn('number', 'Seeing');
                 options = {
                     backgroundColor: "#f5f4f0", 
-                    title: "median: " + decimalPlacesFloat(median, 2) + " mean: " + decimalPlacesFloat(mean, 2) + " stddev: " + decimalPlacesFloat(std, 2), 
+                    title: "median: " + decimalPlacesFloat(median, 2) + "\nmean: " + decimalPlacesFloat(mean, 2) + "\nstddev: " + decimalPlacesFloat(std, 2), 
                     hAxis: {title: 'seeing (arcsec)',
                             titleTextStyle: { italic: false }
                             },

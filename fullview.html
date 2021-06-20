@@ -8,25 +8,23 @@
         <link href="https://gitcdn.github.io/bootstrap-toggle/2.2.2/css/bootstrap-toggle.min.css" rel="stylesheet">
         <script src="https://gitcdn.github.io/bootstrap-toggle/2.2.2/js/bootstrap-toggle.min.js"></script>
         <link rel="stylesheet" type="text/css" href="styles.css"/> 
-        <title>R2D2 live charts</title>
+        <title>R2D2 charts</title>
         <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
-        <script type="text/javascript" src="mini_charts.js"></script>
+        <script type="text/javascript" src="charts.js"></script>
         <script language="Javascript">
             google.charts.load('current', {'packages':['corechart', 'timeline']});
             google.charts.setOnLoadCallback(onLoad);
 
-            var now = new Date();
             var seeingData = {};
             var startTime = null;
             var endTime = null;
             var refreshID = null;
-            var tickerID = null;
             var liveData = 0;
             var dataRefreshSize = "7200";   // Data range for updates (in seconds)
             var latestReading = null;
-		    var offset =  0;
-            var startDate = null;
-            var endDate = null;
+			var summerTime = true;
+            var offset =  0;
+       
             var baseURL = 'http://www.ing.iac.es/~rashley/robodimm/get_data.php';
             // baseURL = "http://localhost/get_data.txt";
             var allCharts = [];
@@ -41,11 +39,13 @@
                     liveData = localStorage.getItem("liveData");
                     console.log("Restored liveData to: "+ liveData);
                     }
+                if (liveData==1) {
+                   $('#refresh').bootstrapToggle('on');
+                    document.getElementById("liveDisplay").style.visibility = "visible";
+                } else getNewData(dataRefreshSize);
+                var now = new Date();
                 offset = now.getTimezoneOffset();
-                console.log("offset:", offset);
-                console.log("Starting the clock...");
                 tickerID = setInterval(clockTicker, 1000);
-                getLatestData();
             } 
 
             function decimalPlacesFloat(value, places) {
@@ -54,7 +54,7 @@
             }
 
             function parseDate(rawDate) {
-                //console.log("raw date:", rawDate);
+                console.log("raw date:", rawDate);
                 var year = parseInt(rawDate.substring(0, 4));
                 var month = parseInt(rawDate.substring(5, 7));
                 var day = parseInt(rawDate.substring(8, 10));
@@ -64,7 +64,7 @@
                 var offset = parseInt(rawDate.split('+')[1]);
                 console.log("year:", year, "month", month, "day:", day, "hour:", hour, "minute:", minute, "seconds:", second, "offset:", offset);
                 var datetime = new Date(Date.UTC(year, month-1, day, hour, minute, second));
-                console.log(datetime);
+                //console.log(datetime);
                 return datetime;
             }
 
@@ -101,22 +101,26 @@
                 if (seeingData['dates'].length) {
                     allCharts=[];
                     allCharts.push(drawSeeingChart());
+                    allCharts.push(drawStarChart());
+                    allCharts.push(drawAirmassSeeingChart());
                     allCharts.push(drawStatsChart());
+                    allCharts.push(drawPositionChart());
                 } else {
-                    // No data returned... clear the charts and display a message
+                    // No data returned... clear the charts
                     for (var i in allCharts) allCharts[i].clearChart();
-
                 }
 
                 latestReading = {};
                 var keys = Object.keys(seeingData);
                 var lastIndex = seeingData['dates'].length - 1;
                 for (var k in keys) {
-                    // console.log(keys[k]);
+                    console.log(keys[k]);
                     latestReading[keys[k]] = seeingData[keys[k]][lastIndex];
                 }
-                console.log("latest data:", latestReading);
-                updateLiveDisplay(latestReading);
+                if (liveData) updateLiveDisplay();
+                // Change the status of the downloading icon back to gray
+                $('#downloading').css('color', 'gray');
+
             }
 
             function getData(url, callback) {
@@ -136,26 +140,46 @@
 				xhr.send();
             };
 
-            function getLatestData() {
-                let seconds = 1 * 60 * 60;
-                console.log("Fetching the last 2 hours of data....");
-                endDate = formatUTCTime(now);
-                let start = new Date(now.getTime() - seconds * 1000);
-                startDate = formatUTCTime(start);
+            function getNewData(seconds) {
+                console.log("in get new data....");
+                console.log("getNewData(" + seconds + ")");
+                var oldRefresh = dataRefreshSize;
+                dataRefreshSize = seconds;
+                if (dataRefreshSize > 86400 && liveData ){
+                    toggleRefresh();
+                    $('#refresh').bootstrapToggle('off');
+                }
+                document.getElementById("r" + oldRefresh).setAttribute("class", "timebutton");
+                document.getElementById("r" + seconds).setAttribute("class", "timebutton btn-primary");
+                localStorage.setItem("dataRefreshSize", seconds);
+                var now = new Date();
+                console.log("Now is:", now);
+                var startDate = new Date(now - seconds * 1000);
                 console.log(startDate);
-                console.log("START:", startDate, "END:", endDate);
-                var params = "";
-                params+= "time_start=" + encodeURIComponent(startDate);
-                params+="&";
-                params+= "time_end=" + encodeURIComponent(endDate);
-                console.log(baseURL + "?" + params);
-                getData(baseURL + '?' + params, processData);
-            }
-
+                startTime = startDate;
+                endTime = now;
+                fillDateFields();
+				var params = "";
+				if (summerTime) {
+                	params = "time_start=" + encodeURIComponent(formatTime(startTime));
+                	params+="&time_end=" + encodeURIComponent(formatTime(endTime));
+				} else {
+                	params = "time_start=" + encodeURIComponent(formatUTCTime(startTime));
+                	params+="&time_end=" + encodeURIComponent(formatUTCTime(endTime));
+				}
+				console.log("Params: " + params);
+                // params = "time_start=2018-12-11+20%3A00%3A00";
+                //document.getElementById("downloading").setAttribute("style", "colour: green");
+                $('#downloading').css('color', 'green');
+                var rawDataURL = baseURL + "?" + params;
+				
+				getData(baseURL + '?' + params, processData);
+            }    
 
             function clockTicker() {
-		    	now = new Date();
-         	    document.getElementById('UTCfield').innerText = formatUTCTime(now);
+		    	var now = new Date();
+                // console.log("tick");
+			    document.getElementById('UTCfield').value = formatUTCTime(now);
             }
 
             function fillDateFields() {
@@ -207,7 +231,7 @@
                 getNewData(dataRefreshSize);
             }
 
-            function updateLiveDisplay(latestReading) {
+            function updateLiveDisplay() {
                 console.log(latestReading);
                 seeing = (latestReading['seeing_long'] + latestReading['seeing_trans']) /2;
                 $('#latestseeing').text(decimalPlacesFloat(seeing, 2)+'"');
@@ -224,7 +248,8 @@
 				console.log("latest data", latestDateString, latestDate);
 				
 				var timeSince = parseFloat((new Date() - latestReading['dates']) / 1000);
-			    console.log("time since " + timeSince);
+				if (summerTime) timeSince+= 3600
+                console.log("time since " + timeSince);
                 var timeSinceStr = "";
                 if (timeSince<60) timeSinceStr = decimalPlacesFloat(timeSince, 0) + "s";
                 if ((timeSince>=60) && (timeSince<3600)) timeSinceStr = decimalPlacesFloat(timeSince/60, 0) + "m";
@@ -237,24 +262,52 @@
                 $('#timesince').text(timeSinceStr);
                 
             }
+  
+            function toggleRefresh(value) {
+                if (value) {
+                    console.log("Toggle refresh: ON");
+                    refreshID = setInterval(refreshData, 30 * 1000);
+                    liveData = 1;
+                    localStorage.setItem("liveData", 1);
+                    document.getElementById("liveDisplay").style.visibility = "visible";
+                    getNewData(dataRefreshSize);
+                } else {
+                    console.log("Toggle refresh: OFF");
+                    clearInterval(refreshID);
+                    liveData = 0;
+                    localStorage.setItem("liveData", 0);
+                    document.getElementById("liveDisplay").style.visibility = "hidden";
+                }
+                
+            }
 	
             function navigate(url) {
                 window.location.replace(url);
             }
+            
             
            
 </script>
 </head>
 
 <body>
-    <!--<img src="telescope.png"> -->
+    
+    <img src="r2d2_logo.png" style="text-align: left;">
     <div>
-        <button class="btn" id="heading" style="background-color: aquamarine;">R2D2 live chart</button>
-        <button class="btn" id="timestamp"><span id="UTCfield">hh:mm:ss</span> UT</button>
-        <button class="timebutton" id="navigate"  onclick="navigate('fullview.html')">Detailed view</button>
+        <span class="glyphicon glyphicon-time" style="color:black"></span>
+        <input type="text" id="UTCfield" size="21"></input>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span class="glyphicon glyphicon-time" style="color:green"></span>
+	    <input type="text" size="21" id="starttime" value="" onchange="changeDateRange()"></input>
+        <input type="text" size="21" id="endtime" value="" onchange="changeDateRange()"></input>
+        <span class="glyphicon glyphicon-time" style="color:red"></span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <button class="timebutton" id="r7200"  onclick="navigate('index.html')">Live view</button>
+        <span id="downloading" class="glyphicon glyphicon-download" style="color:gray"></span>
+
+        <input id="refresh" type="checkbox" data-toggle="toggle" data-onstyle="success" data-size="small" data-on="live" data-off="static" onchange="toggleRefresh(this.checked)">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span id="npoints" style="font-weight: bold;">0</span> points in dataset.    
     </div>
     
-    <div id="liveDisplay" style="position: absolute; z-index: 1; left: 80px; top: 80px; opacity: 1.0; visibility: visible;">
+    <div id="liveDisplay" style="position: absolute; z-index: 1; left: 200px; top: 170px; opacity: 1.0; visibility: hidden;">
         <button class="btn-lg" id="latestseeing" aria-pressed="true" >--</button>
         <button class="btn" id="lateststar" >--</button>
         <button class="btn" id="timesince" >--</button>
@@ -266,17 +319,21 @@
         <button class="timebutton" id="r28800"   onclick="getNewData('28800')">8hr</button>
         <button class="timebutton" id="r43200"   onclick="getNewData('43200')">12hr</button>
         <button class="timebutton" id="r86400"   onclick="getNewData('86400')">24hr</button>
+        <button class="timebutton" id="r604800"  onclick="getNewData('604800')">1 week</button>
+        <button class="timebutton" id="r2678400" onclick="getNewData('2678400')">1 month</button>
+        <button class="timebutton" id="r16070400" onclick="getNewData('16070400')">6 months</button>
+        <button class="timebutton" id="r31536000" onclick="getNewData('31536000')">1 year</button>
     </div> 
+
     
-    
-    <div id="seeing" style="width: 600px; height: 450px; position: absolute; top: 120px; left: 0px;"></div>
-    <div id="stats" style="width: 300px; height: 450px;  position: absolute; top: 120px; left: 500px;"></div>
-    <canvas width=300 height=450 id="stats_overlay" style="width: 300; height:450; position: absolute; top: 120px; left: 500px; z-index:auto"></canvas>
-  
-	<div id="footer" style="position: absolute; top: 600px; left: 10px;">
-        <button class="btn" id="datapoints" ><span id="npoints">0</span> datapoints shown</button>
-        <br/>
-        <a id="rawDataLink">raw data</a>&nbsp;ver 1.0</div> <!-- style="position: absolute; top: 1260px; left: 10px;" -->
+    <div id="seeing" style="width: 750px; height: 500px; position: absolute; top: 180px; left: 20px;"></div>
+    <div id="stats" style="width: 500px; height: 500px;  position: absolute; top: 180px; left: 750px;"></div>
+    <canvas width=500 height=500 id="stats_overlay" style="width: 500; height:500; position: absolute; top: 180px; left: 750px; z-index:auto"></canvas>
+    <div id="stars" style="width: 700px; height: 400px; position: absolute; top: 1180px; left: 20px;"></div>
+    <div id="airmass" style="width: 500px; height: 500px;  position: absolute; top: 670px; left: 750px;"></div>
+    <div id="position" style="width: 750px; height: 500px;  position: absolute; top: 670px; left: 20px;"></div>
+
+	<div id="footer" style="position: absolute; top: 1260px; left: 10px;"><a id="rawDataLink">raw data</a><br>ver 0.9</div>
     
 </body>
 </html>
