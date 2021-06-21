@@ -21,12 +21,14 @@
             var endTime = null;
             var refreshID = null;
             var tickerID = null;
+            var refreshID = null;
             var liveData = 0;
             var dataRefreshSize = "7200";   // Data range for updates (in seconds)
             var latestReading = null;
 		    var offset =  0;
             var startDate = null;
             var endDate = null;
+            var dbOffset = 0;
             var baseURL = 'http://www.ing.iac.es/~rashley/robodimm/get_data.php';
             // baseURL = "http://localhost/get_data.txt";
             var allCharts = [];
@@ -46,6 +48,7 @@
                 console.log("Starting the clock...");
                 tickerID = setInterval(clockTicker, 1000);
                 getLatestData();
+                refreshID = setInterval(refreshData, 30 * 1000);
             } 
 
             function decimalPlacesFloat(value, places) {
@@ -61,14 +64,24 @@
                 var hour = parseInt(rawDate.substring(11, 13));
                 var minute = parseInt(rawDate.substring(14, 16));
                 var second = parseInt(rawDate.substring(17, 19));
-                var offset = parseInt(rawDate.split('+')[1]);
-                console.log("year:", year, "month", month, "day:", day, "hour:", hour, "minute:", minute, "seconds:", second, "offset:", offset);
+                dbOffset = parseInt(rawDate.split('+')[1]);
+                console.log(year + "-" + month +  "-" + day + " " + hour + ":" + minute + ":" + second + " offset " + dbOffset);
+                // console.log("year:", year, "month", month, "day:", day, "hour:", hour, "minute:", minute, "seconds:", second, "offset:", dbOffset);
                 var datetime = new Date(Date.UTC(year, month-1, day, hour, minute, second));
-                console.log(datetime);
+                console.log("db time: ", formatUTCTime(datetime));
+                if (dbOffset != 0) {
+                //    console.log("need to move date times into UTC.");
+                    let newDate = new Date(datetime.getTime() - 60 * 60 * 1000);
+                //    console.log(newDate);
+                    datetime = newDate;
+                }
+                console.log("db UTC time:", formatUTCTime(datetime));
+                //console.log();
                 return datetime;
             }
 
             function processData(err, textData) {
+                let offsetCheck = dbOffset;
                 var textData = textData.split('\n');
                 seeingData['dates'] = [];
                 seeingData['seeing_trans'] = [];
@@ -117,6 +130,9 @@
                 }
                 console.log("latest data:", latestReading);
                 updateLiveDisplay(latestReading);
+                if (offsetCheck!=dbOffset) {
+                    getLatestData();
+                }
             }
 
             function getData(url, callback) {
@@ -139,8 +155,12 @@
             function getLatestData() {
                 let seconds = 1 * 60 * 60;
                 console.log("Fetching the last 2 hours of data....");
-                endDate = formatUTCTime(now);
-                let start = new Date(now.getTime() - seconds * 1000);
+                let end = now;
+                if (dbOffset!=0) {
+                    end = new Date(end.getTime() + dbOffset * 60 * 60 * 1000);
+                } 
+                endDate = formatUTCTime(end);
+                let start = new Date(end.getTime() - seconds * 1000);
                 startDate = formatUTCTime(start);
                 console.log(startDate);
                 console.log("START:", startDate, "END:", endDate);
@@ -180,31 +200,9 @@
                 return dateStr + " " + time;
 			}
 
-            function changeDateRange() {
-                function isValidDate(d) {
-                    return d instanceof Date && !isNaN(d);
-                    }
-                var newStartTime = document.getElementById('starttime').value;
-                var newEndTime = document.getElementById('endtime').value;
-                var newStart = new Date(newStartTime);
-                var newEnd = new Date(newEndTime);
-                if (!isValidDate(newStart)) { alert("Invalid date!"); return; }
-                if (!isValidDate(newEnd)) { alert("Invalid date!"); return; }
-                if (newEnd<newStart) { alert("end before beginning!"); return }
-
-                startTime = newStart;
-                endTime = newEnd;
-                console.log("Fetching data from " + formatUTCTime(startTime) + " to " + formatUTCTime(endTime));
-
-                var params = "time_start=" + encodeURIComponent(formatUTCTime(startTime));
-                params+="&time_end=" + encodeURIComponent(formatUTCTime(endTime));
-                console.log("Params: " + params);
-                $('#downloading').css('color', 'green');
-                getData(baseURL + '?' + params, processData);
-            }
-
+        
             function refreshData() {
-                getNewData(dataRefreshSize);
+                getLatestData();
             }
 
             function updateLiveDisplay(latestReading) {
