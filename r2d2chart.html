@@ -23,7 +23,7 @@
             var tickerID = null;
             var refreshID = null;
             var liveData = 0;
-            var dataRefreshSize = "7200";   // Data range for updates (in seconds)
+            var hoursBack = 2;
             var latestReading = null;
 		    var offset =  0;
             var startDate = null;
@@ -35,19 +35,15 @@
 
             function onLoad() {
                 console.log("The page has loaded....");
-                if (localStorage.getItem("dataRefreshSize") != null) {
-                    dataRefreshSize = localStorage.getItem("dataRefreshSize");
-                    console.log("Restored dataRefreshSize to: "+ dataRefreshSize);
+                if (localStorage.getItem("hoursBack") != null) {
+                    hoursBack = localStorage.getItem("hoursBack");
+                    console.log("Restored hoursBack to: "+ hoursBack);
                 }
-                if (localStorage.getItem("liveData") != null) {
-                    liveData = localStorage.getItem("liveData");
-                    console.log("Restored liveData to: "+ liveData);
-                    }
                 offset = now.getTimezoneOffset();
                 console.log("offset:", offset);
                 console.log("Starting the clock...");
                 tickerID = setInterval(clockTicker, 1000);
-                getLatestData();
+                changeRange(hoursBack);
                 refreshID = setInterval(refreshData, 30 * 1000);
             } 
 
@@ -153,7 +149,7 @@
             };
 
             function getLatestData() {
-                let seconds = 1 * 60 * 60;
+                let seconds = hoursBack * 60 * 60;
                 console.log("Fetching the last 2 hours of data....");
                 let end = now;
                 if (dbOffset!=0) {
@@ -170,6 +166,16 @@
                 params+= "time_end=" + encodeURIComponent(endDate);
                 console.log(baseURL + "?" + params);
                 getData(baseURL + '?' + params, processData);
+            }
+
+            function changeRange(hours) {
+                console.log("Changing range to", hours, "hours");
+                document.getElementById(hoursBack.toString()).style.cssText = '';
+                hoursBack = hours;
+                localStorage.setItem('hoursBack', hoursBack);
+                // style="background-color: burlywood"
+                document.getElementById(hoursBack.toString()).style.cssText = 'background-color: burlywood;';
+                getLatestData();
             }
 
 
@@ -259,11 +265,11 @@
     </div>  
     
     <div>
-        <button class="timebutton" id="r7200"  onclick="getNewData('7200')">2hr</button>
-        <button class="timebutton" id="r14400"   onclick="getNewData('14400')">4hr</button>
-        <button class="timebutton" id="r28800"   onclick="getNewData('28800')">8hr</button>
-        <button class="timebutton" id="r43200"   onclick="getNewData('43200')">12hr</button>
-        <button class="timebutton" id="r86400"   onclick="getNewData('86400')">24hr</button>
+        <button class="timebutton" id="2"  onclick="changeRange('2')">2hr</button>
+        <button class="timebutton" id="4"  onclick="changeRange('4')">4hr</button>
+        <button class="timebutton" id="8"  onclick="changeRange('8')">8hr</button>
+        <button class="timebutton" id="12" onclick="changeRange('12')">12hr</button>
+        <button class="timebutton" id="24" onclick="changeRange('24')">24hr</button>
     </div> 
     
     
@@ -271,7 +277,7 @@
     <div id="stats" style="width: 300px; height: 450px;  position: absolute; top: 120px; left: 500px;"></div>
     <canvas width=300 height=450 id="stats_overlay" style="width: 300; height:450; position: absolute; top: 120px; left: 500px; z-index:auto"></canvas>
   
-	<div id="footer" style="position: absolute; top: 600px; left: 10px;">
+	<div id="footer" style="position: absolute; top: 560px; left: 10px;">
         <button class="btn" id="datapoints" ><span id="npoints">0</span> datapoints shown</button>
         <br/>
         <a id="rawDataLink">raw data</a>&nbsp;ver 1.0</div> <!-- style="position: absolute; top: 1260px; left: 10px;" -->
