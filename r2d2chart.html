@@ -2,6 +2,8 @@
     <head>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
         <link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
+        <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+        <link rel="icon" href="favicon.ico" type="image/x-icon">
         <!-- Latest compiled and minified CSS -->
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
         
@@ -28,8 +30,10 @@
 		    var offset =  0;
             var startDate = null;
             var endDate = null;
-            var dbOffset = 0;
+            var dbOffset = localStorage.dbOffset;
+            if (dbOffset == null) dbOffset = 0;
             var baseURL = 'http://www.ing.iac.es/~rashley/robodimm/get_data.php';
+            var lastDataPointURL = 'http://www.ing.iac.es./~rashley/robodimm/get_last.php';
             // baseURL = "http://localhost/get_data.txt";
             var allCharts = [];
 
@@ -42,9 +46,12 @@
                 offset = now.getTimezoneOffset();
                 console.log("offset:", offset);
                 console.log("Starting the clock...");
-                tickerID = setInterval(clockTicker, 1000);
+                tickerID = setInterval(clockTicker, 1 * 1000);
                 changeRange(hoursBack);
                 refreshID = setInterval(refreshData, 30 * 1000);
+                //refreshGraphID = setInterval(refreshData, 30 * 1000);
+                //refreshLatestID = setInterval(refreshLatest, 5 * 1000);
+                
             } 
 
             function decimalPlacesFloat(value, places) {
@@ -61,17 +68,17 @@
                 var minute = parseInt(rawDate.substring(14, 16));
                 var second = parseInt(rawDate.substring(17, 19));
                 dbOffset = parseInt(rawDate.split('+')[1]);
-                console.log(year + "-" + month +  "-" + day + " " + hour + ":" + minute + ":" + second + " offset " + dbOffset);
+                // console.log(year + "-" + month +  "-" + day + " " + hour + ":" + minute + ":" + second + " offset " + dbOffset);
                 // console.log("year:", year, "month", month, "day:", day, "hour:", hour, "minute:", minute, "seconds:", second, "offset:", dbOffset);
                 var datetime = new Date(Date.UTC(year, month-1, day, hour, minute, second));
-                console.log("db time: ", formatUTCTime(datetime));
+                // console.log("db time: ", formatUTCTime(datetime));
                 if (dbOffset != 0) {
                 //    console.log("need to move date times into UTC.");
                     let newDate = new Date(datetime.getTime() - 60 * 60 * 1000);
                 //    console.log(newDate);
                     datetime = newDate;
                 }
-                console.log("db UTC time:", formatUTCTime(datetime));
+                //console.log("db UTC time:", formatUTCTime(datetime));
                 //console.log();
                 return datetime;
             }
@@ -116,23 +123,15 @@
                     for (var i in allCharts) allCharts[i].clearChart();
 
                 }
-
-                latestReading = {};
-                var keys = Object.keys(seeingData);
-                var lastIndex = seeingData['dates'].length - 1;
-                for (var k in keys) {
-                    // console.log(keys[k]);
-                    latestReading[keys[k]] = seeingData[keys[k]][lastIndex];
+               if (offsetCheck!=dbOffset) {
+                   localStorage.dbOffset = dbOffset;
+                   getLatestData();
                 }
-                console.log("latest data:", latestReading);
-                updateLiveDisplay(latestReading);
-                if (offsetCheck!=dbOffset) {
-                    getLatestData();
-                }
+                getLastDataPoint();      
             }
 
             function getData(url, callback) {
-				console.log(url);
+				console.log(url, callback);
                 document.getElementById("rawDataLink").href=url;
 				xhr = new XMLHttpRequest();
                 xhr.open('GET', url, true);
@@ -150,21 +149,25 @@
 
             function getLatestData() {
                 let seconds = hoursBack * 60 * 60;
-                console.log("Fetching the last 2 hours of data....");
-                let end = now;
+                console.log("Fetching the last", hoursBack, "hours of data....");
+                
+                let end = new Date();
                 if (dbOffset!=0) {
                     end = new Date(end.getTime() + dbOffset * 60 * 60 * 1000);
                 } 
                 endDate = formatUTCTime(end);
                 let start = new Date(end.getTime() - seconds * 1000);
                 startDate = formatUTCTime(start);
-                console.log(startDate);
+                console.log("Start date: ", startDate);
+                console.log("End date: ", endDate);
+                document.getElementById("startDate").innerText = startDate;
+                document.getElementById("endDate").innerText = endDate;
                 console.log("START:", startDate, "END:", endDate);
                 var params = "";
                 params+= "time_start=" + encodeURIComponent(startDate);
                 params+="&";
                 params+= "time_end=" + encodeURIComponent(endDate);
-                console.log(baseURL + "?" + params);
+                // console.log(baseURL + "?" + params);
                 getData(baseURL + '?' + params, processData);
             }
 
@@ -173,7 +176,6 @@
                 document.getElementById(hoursBack.toString()).style.cssText = '';
                 hoursBack = hours;
                 localStorage.setItem('hoursBack', hoursBack);
-                // style="background-color: burlywood"
                 document.getElementById(hoursBack.toString()).style.cssText = 'background-color: burlywood;';
                 getLatestData();
             }
@@ -208,10 +210,38 @@
 
         
             function refreshData() {
-                getLatestData();
+                getLatestData();          
+            }
+            
+            function refreshLatest() {
+                getLastDataPoint();
             }
 
-            function updateLiveDisplay(latestReading) {
+            function getLastDataPoint() {
+                console.log("Fetching last data point");
+                getData(lastDataPointURL, updateLiveDisplay);
+            }
+
+            function updateLiveDisplay(err, response) {
+                response = response.split('\n');
+                var latestReading = {};
+                for (var i in response) {
+                    if (response[i][0] == '#') {
+                        console.log("Comment:", response[i]);
+                        continue;  // Skip lines containing comments
+                    }
+                    fields = response[i].split(",");     
+                    if (fields.length<2) continue;        // Skip the blank lines
+                    console.log(fields);
+		            latestReading.date =  parseDate(fields[0]);
+                    latestReading.seeing_trans = parseFloat(fields[1]);
+                    latestReading.seeing_long = parseFloat(fields[2]);
+                    latestReading.star = fields[3];
+                    latestReading.airmass = parseFloat(fields[4]);
+                    latestReading.mean_x = parseFloat(fields[5]);
+                    latestReading.mean_y = parseFloat(fields[6]);
+                }
+
                 console.log(latestReading);
                 seeing = (latestReading['seeing_long'] + latestReading['seeing_trans']) /2;
                 $('#latestseeing').text(decimalPlacesFloat(seeing, 2)+'"');
@@ -220,14 +250,12 @@
                 else document.getElementById("latestseeing").className = "btn-lg btn-danger";
                 $('#lateststar').text(latestReading['star']);
 
-				latestDateString = latestReading['dates'].toString();
+				var latestDateString = formatTime(latestReading['date']);
 				console.log("string:", latestDateString);
-				latestDate = new Date();
+				var latestDate = createUTCDate(latestDateString);
 				console.log("latestDate:", latestDate);
-				latestDate.setUTCDate(latestDateString)
-				console.log("latest data", latestDateString, latestDate);
 				
-				var timeSince = parseFloat((new Date() - latestReading['dates']) / 1000);
+				var timeSince = parseFloat((new Date().getTime() - latestDate.getTime()) / 1000);
 			    console.log("time since " + timeSince);
                 var timeSinceStr = "";
                 if (timeSince<60) timeSinceStr = decimalPlacesFloat(timeSince, 0) + "s";
@@ -265,14 +293,24 @@
     </div>  
     
     <div>
-        <button class="timebutton" id="2"  onclick="changeRange('2')">2hr</button>
-        <button class="timebutton" id="4"  onclick="changeRange('4')">4hr</button>
-        <button class="timebutton" id="8"  onclick="changeRange('8')">8hr</button>
-        <button class="timebutton" id="12" onclick="changeRange('12')">12hr</button>
-        <button class="timebutton" id="24" onclick="changeRange('24')">24hr</button>
+        <table>
+            <tr align="center">
+                <td>
+                    <button class="timebutton" id="2"  onclick="changeRange('2')">2hr</button>
+                    <button class="timebutton" id="4"  onclick="changeRange('4')">4hr</button>
+                    <button class="timebutton" id="8"  onclick="changeRange('8')">8hr</button>
+                    <button class="timebutton" id="12" onclick="changeRange('12')">12hr</button>
+                    <button class="timebutton" id="24" onclick="changeRange('24')">24hr</button>
+                </td>
+            </tr>
+            <tr align="center">
+                <td colspan="5">
+                    <span style="font-size: larger;"><span id="startDate"></span> -> <span id="endDate"></span></span>
+                </td>
+            </tr>
+            
+        </table>
     </div> 
-    
-    
     <div id="seeing" style="width: 600px; height: 450px; position: absolute; top: 120px; left: 0px;"></div>
     <div id="stats" style="width: 300px; height: 450px;  position: absolute; top: 120px; left: 500px;"></div>
     <canvas width=300 height=450 id="stats_overlay" style="width: 300; height:450; position: absolute; top: 120px; left: 500px; z-index:auto"></canvas>
@@ -280,7 +318,9 @@
 	<div id="footer" style="position: absolute; top: 560px; left: 10px;">
         <button class="btn" id="datapoints" ><span id="npoints">0</span> datapoints shown</button>
         <br/>
-        <a id="rawDataLink">raw data</a>&nbsp;ver 1.0</div> <!-- style="position: absolute; top: 1260px; left: 10px;" -->
+        <a id="rawDataLink">raw data</a>&nbsp;ver 1.0
+    </div> 
+    <!-- style="position: absolute; top: 1260px; left: 10px;" -->
     
 </body>
 </html>
